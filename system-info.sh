@@ -58,23 +58,22 @@ read_dev_table() {
 }
 
 declare -A dev_table
-dev_table[0]="offset=0000E2A8 dev_id=2684 vram='GDDR6X' arch='AD102' name='RTX 4090'"
-dev_table[1]="offset=0000E2A8 dev_id=2704 vram='GDDR6X' arch='AD103' name='RTX 4080'"
-dev_table[2]="offset=0000E2A8 dev_id=2782 vram='GDDR6X' arch='AD104' name='RTX 4070 Ti'"
-dev_table[3]="offset=0000E2A8 dev_id=2786 vram='GDDR6X' arch='AD104' name='RTX 4070'"
-dev_table[4]="offset=0000E2A8 dev_id=2204 vram='GDDR6X' arch='GA102' name='RTX 3090'"
-dev_table[5]="offset=0000E2A8 dev_id=2203 vram='GDDR6X' arch='GA102' name='RTX 3090 Ti'"
-dev_table[6]="offset=0000E2A8 dev_id=2208 vram='GDDR6X' arch='GA102' name='RTX 3080 Ti'"
-dev_table[7]="offset=0000E2A8 dev_id=2206 vram='GDDR6X' arch='GA102' name='RTX 3080'"
-dev_table[8]="offset=0000E2A8 dev_id=2216 vram='GDDR6X' arch='GA102' name='RTX 3080 LHR'"
-dev_table[9]="offset=0000EE50 dev_id=2484 vram='GDDR6' arch='GA104' name='RTX 3070'"
-dev_table[10]="offset=0000EE50 dev_id=2488 vram='GDDR6' arch='GA104' name='RTX 3070 LHR'"
-dev_table[11]="offset=0000E2A8 dev_id=2531 vram='GDDR6' arch='GA106' name='RTX A2000'"
-dev_table[12]="offset=0000E2A8 dev_id=2571 vram='GDDR6' arch='GA106' name='RTX A2000'"
+dev_table[0]="offset=0000E2A8 dev_id=2684 vram='GDDR6X' arch='AD102' name='RTX-4090'"
+dev_table[1]="offset=0000E2A8 dev_id=2704 vram='GDDR6X' arch='AD103' name='RTX-4080'"
+dev_table[2]="offset=0000E2A8 dev_id=2782 vram='GDDR6X' arch='AD104' name='RTX-4070-Ti'"
+dev_table[3]="offset=0000E2A8 dev_id=2786 vram='GDDR6X' arch='AD104' name='RTX-4070'"
+dev_table[4]="offset=0000E2A8 dev_id=2204 vram='GDDR6X' arch='GA102' name='RTX-3090'"
+dev_table[5]="offset=0000E2A8 dev_id=2203 vram='GDDR6X' arch='GA102' name='RTX-3090-Ti'"
+dev_table[6]="offset=0000E2A8 dev_id=2208 vram='GDDR6X' arch='GA102' name='RTX-3080-Ti'"
+dev_table[7]="offset=0000E2A8 dev_id=2206 vram='GDDR6X' arch='GA102' name='RTX-3080'"
+dev_table[8]="offset=0000E2A8 dev_id=2216 vram='GDDR6X' arch='GA102' name='RTX-3080-LHR'"
+dev_table[9]="offset=0000EE50 dev_id=2484 vram='GDDR6' arch='GA104' name='RTX-3070'"
+dev_table[10]="offset=0000EE50 dev_id=2488 vram='GDDR6' arch='GA104' name='RTX-3070-LHR'"
+dev_table[11]="offset=0000E2A8 dev_id=2531 vram='GDDR6' arch='GA106' name='RTX-A2000'"
+dev_table[12]="offset=0000E2A8 dev_id=2571 vram='GDDR6' arch='GA106' name='RTX-A2000'"
 dev_ids=$(read_dev_table "dev_table[@]" "dev_id")
 product_ids=$(read_dev_table "dev_table[@]" "dev_id")
 offset_vals=$(read_dev_table "dev_table[@]" "offset")
-card_names=$(read_dev_table "dev_table[@]" "name")
 
 value_in_array() {
   local value="$1"
@@ -88,7 +87,7 @@ value_in_array() {
 }
 
 while true; do
-  # REMOVE THE IPMI SECTION HERE AND AT THE END OF THE SCRIPT IF YOU ARE NOT RUNNING ON A SYSTEM WITH IPMI
+  # COMMENT THE IPMI SECTION HERE AND SEE THE END OF THIS SCRIPT IF YOU ARE NOT RUNNING ON A SYSTEM WITH IPMI
   systempinfo=$((ipmitool sensor|grep 'degrees C'|grep -v 'na         | degrees C') & )
   dmoninfo=$((nvidia-smi dmon -s pucvmet -c 1) & )
   capacity=0
@@ -102,8 +101,12 @@ while true; do
   while read -r m; do
     product_id_values+=("$m")
   done < <(lspci -nn|grep ' \[10de\:'|grep 'VGA compatible controller'|sed 's/.*\[10de\://'|cut -f1 -d']')
+  cards=()
+  while read -r m; do
+    cards+=("$m")
+  done < <(nvidia-smi|grep '| 00000000:'|grep 'NVIDIA'|grep 'On  \|'|sed 's/On  .*//'|sed 's/.*NVIDIA GeForce //')
   for m in $(lspci -vvv|sed -n '/VGA compatible controller/,/Kernel modules: nvidiafb/p'|grep 'VGA compatible controller'|awk '{print $1}') ; do
-    echo -n "Card $carditer (10de:${product_id_values[$carditer]}): $(get_pci_info $m), VRAM: ${vram_values[$carditer]} MiB"
+    echo -n "[$carditer] ${cards[$carditer]} (10de:${product_id_values[$carditer]}): $(get_pci_info $m), VRAM: ${vram_values[$carditer]} MiB"
     for k in $product_ids ; do
       if [ "${product_id_values[$carditer]}" == "$k" ] ; then
         echo -n " @ $(get_pci_vram_temps $m)"
