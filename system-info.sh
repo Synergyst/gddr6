@@ -90,11 +90,61 @@ value_in_array() {
   return 1 # not found
 }
 
-#while true; do
+get_ipmi_temps() {
+  input_string="$1"
+  declare -a cpu_temperatures
+  declare -a mb_temperatures
+  declare -a ddr_temperatures
+  declare -a lan_temperatures
+  declare -a card_side_temperatures
+  IFS=$'\n'
+  for line in $input_string; do
+    # Extract the key (before space) and value (after space)
+    key=$(echo "$line" | awk '{print $1}')
+    value=$(echo "$line" | awk '{print $2}')
+    # Check the key and append to the corresponding array
+    case "$key" in
+      CPU* )
+        cpu_temperatures+=("$key $value")
+        ;;
+      MB* )
+        mb_temperatures+=("$key $value")
+        ;;
+      DDR4* )
+        ddr_temperatures+=("$key $value")
+        ;;
+      LAN* )
+        lan_temperatures+=("$key $value")
+        ;;
+      CARD_SIDE* )
+        card_side_temperatures+=("$key $value")
+        ;;
+      * )
+        echo "Ignoring unknown key: $key"
+        ;;
+    esac
+  done
+  join_with_commas() {
+    local IFS=', '
+    echo "$*"
+  }
+  echo -en "CPU:\n\t"
+  echo "$(join_with_commas "${cpu_temperatures[@]}"|sed 's/,/, /g')"
+  echo -en "MB:\n\t"
+  echo "$(join_with_commas "${mb_temperatures[@]}"|sed 's/,/, /g')"
+  echo -en "DDR4:\n\t"
+  echo "$(join_with_commas "${ddr_temperatures[@]}"|sed 's/,/, /g')"
+  echo -en "LAN:\n\t"
+  echo "$(join_with_commas "${lan_temperatures[@]}"|sed 's/,/, /g')"
+  echo -en "CARD_SIDE:\n\t"
+  echo "$(join_with_commas "${card_side_temperatures[@]}"|sed 's/,/, /g')"
+}
+
+while true ; do
   # COMMENT THE IPMI SECTION HERE AND SEE THE END OF THIS SCRIPT IF YOU ARE NOT RUNNING ON A SYSTEM WITH IPMI
-  #systempinfo=$((ipmitool sensor|grep 'degrees C'|grep -v 'na         | degrees C') & )
-  dmoninfo=$((nvidia-smi dmon -s pcmt -c 1) & )
-  #dmoninfo=$((nvidia-smi dmon -s pucvmet -c 1) & )
+  systempinfo=$(get_ipmi_temps "$(ipmitool sensor|grep 'degrees C'|grep -v 'na         | degrees C'|sed 's/degrees C.*//'|sed 's/|//g'|cut -f1 -d'.'|awk '{print $1 " " $2 "°C"}'|sed 's/.*TEMP_//')")
+  dmoninfo=$(nvidia-smi dmon -s pcmt -c 1)
+  #dmoninfo=$(nvidia-smi dmon -s pucvmet -c 1)
   capacity=0
   carditer=0
   card_count=0
@@ -136,8 +186,8 @@ value_in_array() {
     echo
     carditer=$(($carditer + 1))
   done
-  #echo -e "\nTotal VRAM capacity: $capacity MiB\n\n$dmoninfo\n\n$systempinfo\n\n----------------------------------------------\n"
+  echo -e "\nTotal VRAM capacity: $capacity MiB\n\n$dmoninfo\n\n$systempinfo\n\n----------------------------------------------\n"
   # Comment above, then uncomment below if using a system without IPMI
-  echo -e "\nTotal VRAM capacity: $capacity MiB\n\n$dmoninfo\n\n----------------------------------------------\n"
-#  sleep 90
-#done
+  #echo -e "\nTotal VRAM capacity: $capacity MiB\n\n$dmoninfo\n\n----------------------------------------------\n"
+  sleep 90
+done
