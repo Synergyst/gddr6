@@ -74,6 +74,7 @@ dev_table[12]="offset=0000E2A8 dev_id=2571 vram='GDDR6' arch='GA106' name='RTX-A
 dev_ids=$(read_dev_table "dev_table[@]" "dev_id")
 product_ids=$(read_dev_table "dev_table[@]" "dev_id")
 offset_vals=$(read_dev_table "dev_table[@]" "offset")
+#card_names=$(read_dev_table "dev_table[@]" "name")
 
 value_in_array() {
   local value="$1"
@@ -105,11 +106,16 @@ while true; do
   while read -r m; do
     cards+=("$m")
   done < <(nvidia-smi|grep '| 00000000:'|grep 'NVIDIA'|grep 'On  \|'|sed 's/On  .*//'|sed 's/.*NVIDIA GeForce //')
+  core_temps=()
+  while read -r m; do
+    core_temps+=("$m")
+  done < <(nvidia-smi|grep '%'|cut -f2 -d'%'|awk '{print $1}'|cut -f1 -d'C')
   for m in $(lspci -vvv|sed -n '/VGA compatible controller/,/Kernel modules: nvidiafb/p'|grep 'VGA compatible controller'|awk '{print $1}') ; do
-    echo -n "[$carditer] ${cards[$carditer]} (10de:${product_id_values[$carditer]}): $(get_pci_info $m), VRAM: ${vram_values[$carditer]} MiB"
+    echo -n "[$carditer] ${cards[$carditer]} (10de:${product_id_values[$carditer]} $(get_pci_info $m)) - vram capacity: ${vram_values[$carditer]} MiB"
+    echo -n " - core: ${core_temps[$carditer]}°C"
     for k in $product_ids ; do
       if [ "${product_id_values[$carditer]}" == "$k" ] ; then
-        echo -n " @ $(get_pci_vram_temps $m)"
+        echo -n ", vram: $(get_pci_vram_temps $m)"
       fi
     done
     echo
