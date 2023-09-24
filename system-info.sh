@@ -25,7 +25,7 @@ get_pci_info() {
     local link_speed=$(cat "$link_speed_file" | awk '{print $1 " " $2}')
     local link_width=$(cat "$link_width_file")
     local generation=${gen_map["$link_speed"]}
-    echo "$device_id - PCI-e generation $generation ($link_speed), $link_width-lanes"
+    echo "Current PCI-e generation: $generation ($link_speed), $link_width-lanes"
   else
     echo "Unable to retrieve link speed and width for device $device_id"
     return 1
@@ -33,11 +33,14 @@ get_pci_info() {
 }
 
 get_pci_vram_temps() {
+#  if [ "$#" -ne 2 ]; then
+#    echo "Usage: $0 <device_id> <offset>"
   if [ "$#" -ne 1 ]; then
     echo "Usage: $0 <device_id>"
     return 1
   fi
   base_address=0x$(lspci -vs 0000:$1|grep 'Memory at '|awk '{print $3}'|head -n1)
+  #memory_offset=0x$2
   memory_offset=0x9a44b0
   result=$(printf "0x%X" "$((base_address + memory_offset))")
   vidmemaddr=$(busybox devmem $result|grep -v '0x00000000')
@@ -87,16 +90,19 @@ value_in_array() {
   return 1 # not found
 }
 
-while true; do
+#while true; do
   # COMMENT THE IPMI SECTION HERE AND SEE THE END OF THIS SCRIPT IF YOU ARE NOT RUNNING ON A SYSTEM WITH IPMI
-  systempinfo=$((ipmitool sensor|grep 'degrees C'|grep -v 'na         | degrees C') & )
-  dmoninfo=$((nvidia-smi dmon -s pucvmet -c 1) & )
+  #systempinfo=$((ipmitool sensor|grep 'degrees C'|grep -v 'na         | degrees C') & )
+  dmoninfo=$((nvidia-smi dmon -s pcmt -c 1) & )
+  #dmoninfo=$((nvidia-smi dmon -s pucvmet -c 1) & )
   capacity=0
   carditer=0
+  card_count=0
   vram_values=()
   while read -r m; do
     vram_values+=("$m")
     capacity=$(($capacity + $m))
+    card_count=$(($card_count + 1))
   done < <(nvidia-smi | grep MiB | grep '%' | cut -f3 -d'/' | awk '{print $1}' | cut -f1 -d'M')
   product_id_values=()
   while read -r m; do
@@ -110,19 +116,28 @@ while true; do
   while read -r m; do
     core_temps+=("$m")
   done < <(nvidia-smi|grep '%'|cut -f2 -d'%'|awk '{print $1}'|cut -f1 -d'C')
+  offset_values=()
+  while read -r m; do
+    offset_values+=("$m")
+  done < <(for m in $offset_vals ; do echo $m ; done)
   for m in $(lspci -vvv|sed -n '/VGA compatible controller/,/Kernel modules: nvidiafb/p'|grep 'VGA compatible controller'|awk '{print $1}') ; do
-    echo -n "[$carditer] ${cards[$carditer]} (10de:${product_id_values[$carditer]} $(get_pci_info $m)) - vram capacity: ${vram_values[$carditer]} MiB"
-    echo -n " - core: ${core_temps[$carditer]}°C"
+    echo -en "[$carditer] ${cards[$carditer]} (10de:${product_id_values[$carditer]} / 0000:$m)"
+    echo -en "\n\t$(get_pci_info $m)"
+    echo -en "\n\tVRAM capacity: ${vram_values[$carditer]} MiB"
+    echo -en "\n\tCore temp: ${core_temps[$carditer]}°C"
+    vram_check_iter=0
     for k in $product_ids ; do
       if [ "${product_id_values[$carditer]}" == "$k" ] ; then
-        echo -n ", vram: $(get_pci_vram_temps $m)"
+        echo -en "\n\tVRAM temp: $(get_pci_vram_temps $m)"
+        break
       fi
+      vram_check_iter=$(($vram_check_iter + 1))
     done
     echo
     carditer=$(($carditer + 1))
   done
-  echo -e "\nTotal VRAM capacity: $capacity MiB\n\n$systempinfo\n\n$dmoninfo\n\n----------------------------------------------"
+  #echo -e "\nTotal VRAM capacity: $capacity MiB\n\n$dmoninfo\n\n$systempinfo\n\n----------------------------------------------\n"
   # Comment above, then uncomment below if using a system without IPMI
-  #echo -e "\nTotal VRAM capacity: $capacity MiB\n\n$dmoninfo\n\n----------------------------------------------"
-  sleep 90
-done
+  echo -e "\nTotal VRAM capacity: $capacity MiB\n\n$dmoninfo\n\n----------------------------------------------\n"
+#  sleep 90
+#done
