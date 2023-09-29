@@ -8,10 +8,8 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <pci/pci.h>
-#include <signal.h>
 #define PG_SZ sysconf(_SC_PAGE_SIZE)
-#define PRINT_ERROR() do { fprintf(stderr, "Error at line %d, file %s (%d) [%s]\n", __LINE__, __FILE__, errno, strerror(errno)); exit(1); } while(0)
-#define PCI_ID_BUFFER_SIZE 48
+#define PCI_ID_BUFFER_SIZE 40
 struct device {
   uint32_t bar0;
   uint8_t bus, dev, func;
@@ -40,29 +38,7 @@ struct device dev_table[] = {
   { .offset = 0x0000E2A8, .vendor_id = 0x10de, .device_id = 0x2531, .vram = "GDDR6",  .arch = "GA106", .name =  "RTX A2000" },
   { .offset = 0x0000E2A8, .vendor_id = 0x10de, .device_id = 0x2571, .vram = "GDDR6",  .arch = "GA106", .name =  "RTX A2000" },
 };
-void cleanup(int signal);
-void cleanup_sig_handler(void);
 int pci_detect_dev(void);
-void cleanup(int signal) {
-  if (signal == SIGHUP || signal == SIGINT || signal == SIGTERM) {
-    if (map_base != (void *) -1)
-      munmap(map_base, PG_SZ);
-    if (fd != -1)
-      close(fd);
-    //fprintf(stderr, "\n");
-    return;
-  }
-  return;
-}
-void cleanup_sig_handler(void) {
-  struct sigaction sa;
-  sa.sa_handler = &cleanup;
-  sa.sa_flags = 0;
-  sigfillset(&sa.sa_mask);
-  if (sigaction(SIGINT, &sa, NULL) < 0) perror("Cannot handle SIGINT");
-  if (sigaction(SIGHUP, &sa, NULL) < 0) perror("Cannot handle SIGHUP");
-  if (sigaction(SIGTERM, &sa, NULL) < 0) perror("Cannot handle SIGTERM");
-}
 int pci_detect_dev(void) {
   struct pci_access *pacc = NULL;
   struct pci_dev *pci_dev = NULL;
@@ -87,20 +63,18 @@ int pci_detect_dev(void) {
   pci_cleanup(pacc);
   return num_devs;
 }
-char *fetch_gddr6_gddr6x_temp(char *pci_id);
-char *fetch_gddr6_gddr6x_temp(char *pci_id) {
+uint32_t fetch_gddr6_gddr6x_temp(const char *pci_id);
+uint32_t fetch_gddr6_gddr6x_temp(const char *pci_id) {
   void *virt_addr;
   uint32_t temp, phys_addr, read_result, base_offset;
   int num_devs;
   num_devs = pci_detect_dev();
   if (num_devs == 0) {
-    return NULL;
+    return -1;
   }
   if ((fd = open("/dev/mem", O_RDWR | O_SYNC)) == -1) {
-    return NULL;
-    PRINT_ERROR();
+    return -1;
   }
-  cleanup_sig_handler();
   for (int i = 0; i < num_devs; i++) {
     struct device *device = &devices[i];
     phys_addr = (device->bar0 + device->offset);
@@ -109,8 +83,7 @@ char *fetch_gddr6_gddr6x_temp(char *pci_id) {
     if (map_base == (void*) -1) {
       if (fd != -1)
         close(fd);
-      return NULL;
-      PRINT_ERROR();
+      return -1;
     }
     virt_addr = (uint8_t*) map_base + (phys_addr - base_offset);
     read_result = *((uint32_t*) virt_addr);
@@ -118,10 +91,10 @@ char *fetch_gddr6_gddr6x_temp(char *pci_id) {
     char formattedValue[PCI_ID_BUFFER_SIZE];
     snprintf(formattedValue, sizeof(formattedValue), "%.2x:%.2x.%x", device->bus, device->dev, device->func);
     if (strcmp(formattedValue, pci_id) == 0) {
-      char *temp_str = (char*)malloc(PCI_ID_BUFFER_SIZE);
-      snprintf(temp_str, PCI_ID_BUFFER_SIZE, "%u", temp);
-      return temp_str;
+      if (map_base != (void *) -1) munmap(map_base, PG_SZ);
+      if (fd != -1) close(fd);
+      return temp;
     }
   }
-  return NULL;
+  return -1;
 }
